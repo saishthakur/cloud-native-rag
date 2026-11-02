@@ -3,25 +3,34 @@
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{cite}
+\usepackage{array}
 \usepackage{booktabs}
-\usepackage{multirow}
 \usepackage{url}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\graphicspath{{figures/}}
+\usepackage{flushend}
+\graphicspath{{figures/}{./}}
+
+% One table style for the whole paper: every table is one column wide, exactly \columnwidth,
+% in \footnotesize, with the same padding and row height.
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.15}
 
 \begin{document}
 
 \title{CloudRAG: A Cloud-Native, Microservices-Based Retrieval-Augmented Generation Framework for Scalable, Secure, and Multi-Tenant Enterprise Knowledge Platforms}
 
-\author{Aaryan~Sanjay~Paranjape, Aryan~Chandra, S.~Badri~Narayana, and Saish~Hitesh~Thakur%
-\thanks{The authors are with the Manipal Institute of Technology, Manipal, India. E-mail:\newline
-aaryan2.mitmpl2023@learner.manipal.edu (A.~S.~Paranjape),\newline
-aryan7.mitmpl2023@learner.manipal.edu (A.~Chandra),\newline
-badri.mitmpl2023@learner.manipal.edu (S.~B.~Narayana),\newline
-thakur.mitmpl2023@learner.manipal.edu (S.~H.~Thakur).}%
-\thanks{Student IDs: 230911168 (G022), 230911174 (G023), 230911218 (G024), 230911512 (G046).
-Source code: github.com/saishthakur/cloud-native-rag.}%
+\author{%
+\begin{tabular}{@{}>{\centering\arraybackslash}p{0.46\textwidth}>{\centering\arraybackslash}p{0.46\textwidth}@{}}
+Aaryan~Sanjay~Paranjape & Aryan~Chandra \\
+{\small\texttt{aaryan2.mitmpl2023@learner.manipal.edu}} & {\small\texttt{aryan7.mitmpl2023@learner.manipal.edu}} \\
+{\small 230911168 \quad G022} & {\small 230911174 \quad G023} \\[0.8em]
+S.~Badri~Narayana & Saish~Hitesh~Thakur \\
+{\small\texttt{badri.mitmpl2023@learner.manipal.edu}} & {\small\texttt{thakur.mitmpl2023@learner.manipal.edu}} \\
+{\small 230911218 \quad G024} & {\small 230911512 \quad G026}
+\end{tabular}\\[0.6em]
+Manipal Institute of Technology, Manipal, India\\
+{\small\texttt{github.com/saishthakur/cloud-native-rag}}%
 }
 
 \maketitle
@@ -147,27 +156,25 @@ Table~\ref{tab:comparison} compares the capabilities of representative approache
 of an existing approach is a single dimension; none combines adaptive routing, graph reasoning,
 multi-tenant security and operational measurement in one deployable system.
 
-\begin{table}[!t]
-\caption{Capability Comparison of Existing Approaches}
-\label{tab:comparison}
+\begin{table}[!htbp]
 \centering
+\caption{Capability Comparison of Existing Approaches (\checkmark: supported; $\circ$: partial; --: not addressed)}
+\label{tab:comparison}
 \footnotesize
-\setlength{\tabcolsep}{2.5pt}
-\setbox0=\hbox{\begin{tabular}{lcccccc}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lcccccc@{}}
 \toprule
-Approach & Hybrid & Graph & Adaptive & Multi- & Security & Ops. \\
- & retrieval & reasoning & routing & tenant & controls & metrics \\
+ & Hybrid & Graph & Adaptive & Multi- & Security & Ops. \\
+Approach & retrieval & (KG) & routing & tenant & controls & metrics \\
 \midrule
 Naive RAG~\cite{lewis2020rag} & -- & -- & -- & -- & -- & -- \\
-Advanced RAG~\cite{fan2024survey} & \checkmark & -- & partial & -- & -- & -- \\
+Advanced RAG~\cite{fan2024survey} & \checkmark & -- & $\circ$ & -- & -- & -- \\
 GraphRAG~\cite{edge2024graphrag} & -- & \checkmark & -- & -- & -- & -- \\
-KA-RAG~\cite{gao2025karag} & \checkmark & \checkmark & agentic & -- & -- & -- \\
+KA-RAG~\cite{gao2025karag} & \checkmark & \checkmark & $\circ$ & -- & -- & -- \\
 RAG-Stack~\cite{jiang2025ragstack} & \checkmark & -- & -- & -- & -- & \checkmark \\
 Securing RAG~\cite{ammann2025securing} & -- & -- & -- & -- & \checkmark & -- \\
 \textbf{CloudRAG} & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
 \bottomrule
-\end{tabular}}%
-\leavevmode\ifdim\wd0>\columnwidth\relax\resizebox{\columnwidth}{!}{\box0}\else\box0\fi\par
+\end{tabular*}
 \end{table}
 
 \subsection{Research Gap}
@@ -223,7 +230,7 @@ cited answers using Claude, with an offline extractive generator as fallback. Ev
 Prometheus metrics and health probes. The user's token is forwarded on every hop and re-verified by each
 service.
 
-\begin{figure}[!t]
+\begin{figure}[!htbp]
     \centering
     \includegraphics[width=\columnwidth]{system_architecture.png}
     \caption{Architecture of CloudRAG. Solid arrows: query path; dashed arrows: event-driven ingestion
@@ -257,7 +264,7 @@ sources, and the gateway computes online faithfulness and relevance estimates.
 \subsection{Algorithm}
 Algorithm~\ref{alg:route} summarises routing and the agentic pathway.
 
-\begin{algorithm}[!t]
+\begin{algorithm}[!htbp]
 \caption{Adaptive routing and agentic retrieval}
 \label{alg:route}
 \footnotesize
@@ -348,8 +355,8 @@ $h_i=\mathrm{SHA256}(h_{i-1}\Vert e_i)$, so any edit, deletion or reordering is 
 
 \textit{Performance model.} Per-query cost is measured as wall-clock latency, CPU time $T_{\text{cpu}}$,
 internal requests and bytes, and estimated energy $E=T_{\text{cpu}}\,P_{\text{core}}$, where
-$P_{\text{core}}=2.5$\,W (15\,W processor base power over six cores). LLM cost is estimated from prompt and answer
-length at Claude Opus 5.5 list prices (\$4 and \$20 per million input and output tokens).
+$P_{\text{core}}=2.5$\,W (15\,W processor base power over six cores). LLM cost is estimated from prompt and
+answer length at Claude Opus 5.5 list prices (\$4 and \$20 per million input and output tokens).
 
 \section{Experimental Setup}
 
@@ -411,7 +418,7 @@ best method on single-hop, relational, multi-hop and multi-part questions (100\%
 aggregation, where the router doubles the context budget. Table~\ref{tab:bytype} gives the values and
 Table~\ref{tab:retrieval} the retrieval metrics.
 
-\begin{figure}[!t]
+\begin{figure}[!htbp]
     \centering
     \includegraphics[width=\columnwidth]{performance_results.png}
     \caption{Performance of CloudRAG and the baselines over five seeds: (a) answer accuracy by question
@@ -420,6 +427,7 @@ Table~\ref{tab:retrieval} the retrieval metrics.
 \end{figure}
 
 \input{tables/tab_by_type}
+
 \input{tables/tab_retrieval}
 
 The router sent every single-hop question to the naive pathway, every relational question to the graph
@@ -429,26 +437,29 @@ to the graph pathway. Consequently CloudRAG pays the agentic cost on only 36\% o
 \subsection{Comparison With Existing Methods}
 Table~\ref{tab:performance} compares the methods on the template's four headline metrics. CloudRAG
 achieves the highest accuracy (96.7\%) and F1 (0.493), against 92.7\% and 0.478 for agentic RAG, while its
-median latency is 2.5$\times$ lower (7.5 vs.\ 18.5\,ms) and its throughput 1.7$\times$ higher (90.8 vs.\
-52.3 QPS). Fig.~\ref{fig:performance}(b) shows this trade-off: the cheaper baselines are faster but
+median latency is 2.5$\times$ lower (7.5 vs.\ 18.5\,ms) and its throughput 1.7$\times$ higher (91 vs.\
+52 queries/s). Fig.~\ref{fig:performance}(b) shows this trade-off: the cheaper baselines are faster but
 \mbox{28--43} points less accurate. F1 is low for every method by construction, because with $k=5$ and
-one to three gold documents per question precision@$k$ is capped. Table~\ref{tab:latency} reports latency
-percentiles, CPU time, estimated energy and estimated LLM cost per query.
+one to three gold documents per question precision@$k$ is capped.
 
 \input{tables/tab_performance}
+
+Table~\ref{tab:latency} reports latency percentiles, CPU time, estimated energy and estimated LLM cost
+per query. CloudRAG's p95 latency (28.3\,ms) stays below agentic RAG's because only the multi-hop and
+multi-part questions take the agentic pathway.
+
 \input{tables/tab_latency}
 
 \subsection{Security Analysis}
 Table~\ref{tab:security} summarises the security evaluation. No cross-tenant or unauthorised read
 occurred across 120 leakage probes, while in 60 further probes authorised finance users retrieved the
-restricted budgets in every case;
-none of 480 seeded PII values reached the index; all injection queries were blocked with no false
-positives; and every audit chain verified. All 45 instruction-injection documents were quarantined and
-all 45 keyword-stuffing documents were flagged and down-weighted. Plain misinformation documents carry no
-detectable signal and were accepted; the attack still failed because untrusted uploads rank below the
-system of record when facts conflict. A false claim from a trusted source would not be stopped, which
-motivates provenance-aware review workflows as future work. In tampering tests, chunks altered inside
-the index failed signature verification and were excluded from generation.
+restricted budgets in every case; none of 480 seeded PII values reached the index; all injection queries
+were blocked with no false positives; and every audit chain verified. All 45 instruction-injection
+documents were quarantined and all 45 keyword-stuffing documents were flagged and down-weighted. Plain
+misinformation documents carry no detectable signal and were accepted; the attack still failed because
+untrusted uploads rank below the system of record when facts conflict. A false claim from a trusted source
+would not be stopped, which motivates provenance-aware review workflows as future work. In tampering tests,
+chunks altered inside the index failed signature verification and were excluded from generation.
 
 \input{tables/tab_security}
 
@@ -461,17 +472,20 @@ about 5\,ms once the circuit breaker opened, and service resumed about 7\,s afte
 Table~\ref{tab:communication} reports service-to-service traffic with every service deployed as a separate
 HTTP application. CloudRAG issues 12.4 internal requests and 202\,KB per query, 37\% and 42\% less than
 always-agentic retrieval; ingestion costs two internal requests and 6.1\,KB per document plus 1.2\,KB on
-the event stream. Table~\ref{tab:secoverhead} lists the cost of each security control: together they take
-12\% of end-to-end ingestion time and 1.3\% of median query latency. The index footprint was 5.2\,KB per
-chunk (4.1\,MB for 816 chunks), and in-process ingestion sustained 270 documents per second with updates
-searchable 7.3\,ms after ingestion (median).
+the event stream.
 
 \input{tables/tab_communication}
+
+Table~\ref{tab:secoverhead} lists the cost of each security control: together they take 12\% of
+end-to-end ingestion time and 1.3\% of median query latency. The index footprint was 5.2\,KB per chunk
+(4.1\,MB for 816 chunks), and in-process ingestion sustained 270 documents per second with updates
+searchable 7.3\,ms after ingestion (median).
+
 \input{tables/tab_security_overhead}
 
 \textit{Scalability and limitations.} On the eight-thread test machine the distributed stack reached about
-20 QPS; scaling the retrieval service to three replicas moved the bottleneck to the reranker and to the
-busiest tenant's shard, with the machine itself near saturation. All of one tenant's searches reach a
+20 queries/s; scaling the retrieval service to three replicas moved the bottleneck to the reranker and to
+the busiest tenant's shard, with the machine itself near saturation. All of one tenant's searches reach a
 single shard, so per-shard read replicas are needed for very large tenants. The results use a synthetic
 corpus that was also used during development, lexical embedding and reranking models, and an extractive
 generator; they should be read as a controlled comparison of retrieval pathways rather than as absolute

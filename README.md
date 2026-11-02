@@ -225,10 +225,10 @@ and generator, so differences come from retrieval alone. Hardware: Intel Core i3
 | Method | Accuracy (%) | Latency p50 (ms) | Throughput (QPS) | F1 | CPU (ms/query) | Energy (J/query)* |
 |---|---|---|---|---|---|---|
 | Vanilla RAG | 54.1 ± 1.1 | 2.3 ± 0.4 | 318 ± 85 | 0.337 | 2.9 | 0.007 |
-| Advanced RAG | 54.5 ± 1.5 | 5.0 ± 0.6 | 161 ± 40 | 0.347 | 5.6 | 0.014 |
+| Advanced RAG | 54.5 ± 1.5 | 5.0 ± 0.6 | 160 ± 40 | 0.347 | 5.6 | 0.014 |
 | GraphRAG | 68.8 ± 3.0 | 2.9 ± 0.5 | 324 ± 99 | 0.401 | 3.2 | 0.008 |
 | Agentic RAG | 92.7 ± 1.6 | 18.5 ± 3.9 | 52 ± 5 | 0.478 | 19.9 | 0.050 |
-| **CloudRAG** | **96.7 ± 1.1** | **7.5 ± 1.7** | **91 ± 13** | **0.493** | **11.9** | **0.030** |
+| **CloudRAG** | **96.7 ± 1.1** | **7.5 ± 1.7** | **91 ± 12** | **0.493** | **11.9** | **0.030** |
 
 <sub>*Energy is estimated from CPU time (2.5 W per busy core), not metered. F1 is retrieval F1
 (precision@5 and recall over gold evidence documents); with 1–3 gold documents among 5 retrieved, every

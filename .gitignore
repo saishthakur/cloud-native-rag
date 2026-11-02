@@ -15,3 +15,4 @@ data/
 
 # build outputs
 *.zip
+CloudRAG_paper_*_main.tex

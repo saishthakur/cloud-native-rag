@@ -32,7 +32,11 @@ def main() -> None:
         z.write(os.path.join(HERE, "references.bib"), "references.bib")
         for name in sorted(os.listdir(os.path.join(HERE, "figures"))):
             z.write(os.path.join(HERE, "figures", name), f"figures/{name}")
+    standalone = os.path.splitext(out)[0] + "_main.tex"  # the same single file, for pasting into an editor
+    with open(standalone, "w", encoding="utf-8", newline="\n") as f:
+        f.write(tex)
     print("wrote", os.path.abspath(out))
+    print("wrote", os.path.abspath(standalone))
     for info in zipfile.ZipFile(out).infolist():
         print(f"{info.file_size:>9}  {info.filename}")
 

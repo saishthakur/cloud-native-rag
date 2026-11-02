@@ -142,80 +142,85 @@ def aggregate(per_seed: list[dict], seeds: list[int]) -> dict:
 
 
 # -- LaTeX ---------------------------------------------------------------------------------------------
+# Every table uses one style so they look identical in the paper: single column, exactly
+# \columnwidth wide (tabular* stretches the gaps; nothing is scaled), \footnotesize, the
+# padding and row height set once in the preamble, short headers with units in the caption,
+# and the proposed system in bold.
+TEX_LABELS = {"vanilla-rag": "Vanilla RAG", "advanced-rag": "Advanced RAG", "graphrag": "GraphRAG",
+              "agentic-rag": "Agentic RAG", "cloudrag": "\\textbf{CloudRAG}"}
+TEX_QTYPES = {"single": "Single", "relational": "Relational", "multihop": "Multi-hop",
+              "multipart": "Multi-part", "global": "Aggreg."}
+
+
 def _pm(st: dict, scale: float = 1.0, digits: int = 1) -> str:
     return f"{st['mean'] * scale:.{digits}f}$\\pm${st['std'] * scale:.{digits}f}"
 
 
-def _table(label: str, caption: str, cols: str, header: str, rows: list[str], small: bool = True,
-           wide: bool = False) -> str:
-    """booktabs table; shrinks to the column (or page, for ``wide``) only when it would overflow."""
-    env = "table*" if wide else "table"
-    width = "\\textwidth" if wide else "\\columnwidth"
-    size = "\\footnotesize\n" + ("\\setlength{\\tabcolsep}{3pt}\n" if small else "")
+def _table(label: str, caption: str, cols: str, header: str, rows: list[str]) -> str:
     body = "\n".join(rows)
-    tabular = (f"\\begin{{tabular}}{{{cols}}}\n\\toprule\n{header} \\\\\n\\midrule\n{body}\n\\bottomrule\n"
-               f"\\end{{tabular}}")
-    return (f"\\begin{{{env}}}[!t]\n\\caption{{{caption}}}\n\\label{{{label}}}\n\\centering\n{size}"
-            f"\\setbox0=\\hbox{{{tabular}}}%\n"
-            f"\\leavevmode\\ifdim\\wd0>{width}\\relax\\resizebox{{{width}}}{{!}}{{\\box0}}\\else\\box0\\fi\\par\n"
-            f"\\end{{{env}}}\n")
+    return (f"\\begin{{table}}[!htbp]\n\\centering\n\\caption{{{caption}}}\n\\label{{{label}}}\n\\footnotesize\n"
+            f"\\begin{{tabular*}}{{\\columnwidth}}{{@{{\\extracolsep{{\\fill}}}}{cols}@{{}}}}\n"
+            f"\\toprule\n{header} \\\\\n\\midrule\n{body}\n\\bottomrule\n\\end{{tabular*}}\n\\end{{table}}\n")
 
 
 def latex_tables(res: dict) -> dict[str, str]:
     S, cfg, n = res["systems"], res["config"], len(res["seeds"])
-    best = max(S, key=lambda s: S[s]["correct"]["mean"])
-    bold = lambda s, txt: f"\\textbf{{{txt}}}" if s == best else txt  # noqa: E731
     t = {}
 
     t["tab_performance"] = _table(
-        "tab:performance", f"Performance Comparison (mean$\\pm$std over {n} seeds)", "lcccc",
-        "Method & Accuracy (\\%) & Latency p50 (ms) & Throughput (QPS) & F1",
-        [f"{LABELS[s]} & {bold(s, _pm(v['correct'], 100))} & {_pm(v['p50_ms'])} & {_pm(v['throughput_qps'])} & "
+        "tab:performance",
+        f"Performance Comparison (mean$\\pm$std over {n} seeds; latency in ms, throughput in queries/s "
+        "with 8 clients)", "lcccc",
+        "Method & Accuracy (\\%) & Latency & Throughput & F1",
+        [f"{TEX_LABELS[s]} & {_pm(v['correct'], 100)} & {_pm(v['p50_ms'])} & {_pm(v['throughput_qps'], 1, 0)} & "
          f"{_pm(v['f1'], 1, 3)} \\\\" for s, v in S.items()])
 
     t["tab_retrieval"] = _table(
         "tab:retrieval", "Retrieval and Generation Quality (mean over seeds)", "lcccccc",
         "Method & Hit@k & MRR & Ctx-P & Ctx-R & Faith. & Rel.",
-        [f"{LABELS[s]} & {v['hit']['mean']:.3f} & {v['mrr']['mean']:.3f} & {v['ctx_precision']['mean']:.3f} & "
+        [f"{TEX_LABELS[s]} & {v['hit']['mean']:.3f} & {v['mrr']['mean']:.3f} & {v['ctx_precision']['mean']:.3f} & "
          f"{v['ctx_recall']['mean']:.3f} & {v['faithfulness']['mean']:.3f} & {v['answer_relevance']['mean']:.3f} \\\\"
-         for s, v in S.items()], wide=True)
+         for s, v in S.items()])
 
     t["tab_by_type"] = _table(
         "tab:bytype", "Answer Accuracy (\\%) by Question Type", "l" + "c" * len(QTYPES),
-        "Method & " + " & ".join(QTYPE_LABELS[q] for q in QTYPES),
-        [f"{LABELS[s]} & " + " & ".join(f"{v['by_type'][q]['correct']['mean'] * 100:.1f}" for q in QTYPES) + " \\\\"
-         for s, v in S.items()])
+        "Method & " + " & ".join(TEX_QTYPES[q] for q in QTYPES),
+        [f"{TEX_LABELS[s]} & " + " & ".join(f"{v['by_type'][q]['correct']['mean'] * 100:.1f}" for q in QTYPES)
+         + " \\\\" for s, v in S.items()])
 
     t["tab_latency"] = _table(
-        "tab:latency", "Latency Distribution and Compute Cost per Query", "lcccccc",
-        "Method & p50 & p95 & p99 (ms) & CPU (ms) & Energy (J) & Cost (\\$)",
-        [f"{LABELS[s]} & {v['p50_ms']['mean']:.1f} & {v['p95_ms']['mean']:.1f} & {v['p99_ms']['mean']:.1f} & "
+        "tab:latency", "Latency Percentiles and Cost per Query (latency and CPU time in ms, energy in J, "
+        "estimated LLM cost in USD)", "lcccccc",
+        "Method & p50 & p95 & p99 & CPU & Energy & Cost",
+        [f"{TEX_LABELS[s]} & {v['p50_ms']['mean']:.1f} & {v['p95_ms']['mean']:.1f} & {v['p99_ms']['mean']:.1f} & "
          f"{v['cpu_ms_per_query']['mean']:.1f} & {v['energy_j_per_query']['mean']:.3f} & "
-         f"{v['cost_per_query_usd']['mean']:.4f} \\\\" for s, v in S.items()], wide=True)
+         f"{v['cost_per_query_usd']['mean']:.4f} \\\\" for s, v in S.items()])
 
     comm = res["overhead"]["communication"]
     t["tab_communication"] = _table(
-        "tab:communication", f"Communication Overhead per Query ({comm['shards']} index shards, HTTP)", "lccc",
-        "Method & Internal requests & Payload (KB) & p50 over HTTP (ms)",
-        [f"{LABELS[s]} & {v['internal_requests_per_query']:.1f} & {v['internal_kb_per_query']:.1f} & "
+        "tab:communication", f"Communication Overhead per Query ({comm['shards']} index shards, every service "
+        "over HTTP; payload in KB, latency in ms)", "lccc",
+        "Method & Internal requests & Payload & Latency p50",
+        [f"{TEX_LABELS[s]} & {v['internal_requests_per_query']:.1f} & {v['internal_kb_per_query']:.1f} & "
          f"{v['p50_ms_over_http']:.1f} \\\\" for s, v in comm["query"].items()])
 
     so = res["overhead"]["security"]
     us = lambda k: f"{so[k]['mean']:.1f}"  # noqa: E731
     t["tab_security_overhead"] = _table(
-        "tab:secoverhead", "Processing Cost of Security Controls", "llr",
-        "Control & Unit & Time ($\\mu$s)",
-        [f"PII redaction & per document & {us('pii_redaction_us_per_doc')} \\\\",
-         f"Near-duplicate / hidden-text check & per document & {us('poisoning_doc_signals_us_per_doc')} \\\\",
+        "tab:secoverhead", "Processing Cost of Security Controls (time in $\\mu$s; percentages are shares of "
+        "end-to-end ingestion time and of median query latency)", "llr",
+        "Control & Unit & Time",
+        [f"PII redaction & per doc. & {us('pii_redaction_us_per_doc')} \\\\",
+         f"Duplicate / hidden-text check & per doc. & {us('poisoning_doc_signals_us_per_doc')} \\\\",
          f"Poisoning scan & per chunk & {us('poisoning_scan_us_per_chunk')} \\\\",
-         f"Provenance signing (HMAC) & per chunk & {us('provenance_sign_us_per_chunk')} \\\\",
+         f"Provenance signing & per chunk & {us('provenance_sign_us_per_chunk')} \\\\",
          f"Provenance verification & per chunk & {us('provenance_verify_us_per_chunk')} \\\\",
          f"Query injection filter & per query & {us('query_guard_us_per_query')} \\\\",
          "\\midrule",
-         f"All ingestion controls & per document & {us('ingest_security_us_per_doc')} "
+         f"All ingestion controls & per doc. & {us('ingest_security_us_per_doc')} "
          f"({so['ingest_security_share']['mean'] * 100:.0f}\\%) \\\\",
          f"All query-time controls & per query & {us('query_security_us')} "
-         f"({so['query_security_share_of_p50']['mean'] * 100:.1f}\\% of p50) \\\\"], small=True)
+         f"({so['query_security_share_of_p50']['mean'] * 100:.1f}\\%) \\\\"])
 
     sec = res["security"]
     pct = lambda k: f"{sec[k]['mean'] * 100:.1f}\\%"  # noqa: E731
@@ -227,7 +232,7 @@ def latex_tables(res: dict) -> dict[str, str]:
         f"RBAC recall (authorised) & {sec['probes'].get('rbac_authorized_n', 0)} probes & {pct('rbac_authorized_recall')} \\\\",
         f"PII residue in index & {sec['pii_values_checked']} values & {pct('pii_residual_rate')} \\\\",
         f"Injection queries blocked & {5 * n} queries & {pct('injection_block_rate')} \\\\",
-        f"Benign queries blocked (FP) & {5 * n} queries & {pct('benign_false_positive_rate')} \\\\",
+        f"Benign queries blocked & {5 * n} queries & {pct('benign_false_positive_rate')} \\\\",
         "\\midrule",
     ]
     for kind, label in (("injection", "Instruction injection"), ("stuffing", "Keyword stuffing"),
@@ -235,10 +240,12 @@ def latex_tables(res: dict) -> dict[str, str]:
         o = outcomes.get(kind, {})
         handled = ", ".join(f"{v} {k}" for k, v in sorted(o.items()))
         a = att.get(f"cloudrag:{kind}", {"n": 1, "success": 0})
-        rows.append(f"{label} doc. & {handled} & {a['success'] / a['n'] * 100:.1f}\\% success \\\\")
-    rows.append(f"Audit chain integrity & {sec['audit_records']} records & "
+        rows.append(f"{label} & {handled} & {a['success'] / a['n'] * 100:.1f}\\% success \\\\")
+    rows.append(f"Audit-chain integrity & {sec['audit_records']:,} records & "
                 f"{'valid' if sec['audit_chains_valid'] else 'BROKEN'} \\\\")
-    t["tab_security"] = _table("tab:security", "Security Evaluation", "llr", "Test & Volume & Result", rows)
+    t["tab_security"] = _table("tab:security", "Security Evaluation (all five seeds; poisoning rows give the "
+                               "ingestion outcome and the attack success rate)", "llr",
+                               "Test & Volume & Result", rows)
 
     ds = res["dataset"]
     qps = ds["questions_per_seed"]
@@ -251,10 +258,10 @@ def latex_tables(res: dict) -> dict[str, str]:
          "\\midrule"]
         + [f"{QTYPE_LABELS[q]} questions & {qps.get(q, 0)} \\\\" for q in QTYPES]
         + [f"Total questions & {ds['questions_total_per_seed']} \\\\",
-           f"Seeds (independent corpora) & {n} \\\\"], small=False)
+           f"Seeds (independent corpora) & {n} \\\\"])
 
     t["tab_parameters"] = _table(
-        "tab:parameters", "Experimental Parameters", "lc", "Parameter & Value",
+        "tab:parameters", "Experimental Parameters", "lr", "Parameter & Value",
         [f"Retrieved chunks per query ($k$) & {cfg['top_k']} \\\\",
          "Chunk size & 120 words, 1-sentence overlap \\\\",
          "Embedding & feature hashing, 512 dims \\\\",
