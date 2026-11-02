@@ -9,7 +9,7 @@ retrieval pathway that can answer it, and every tenant's data stays isolated and
 
 > **Headline result** (5 independent runs, mean ± std): **96.7 ± 1.1 % answer accuracy**, against
 > 92.7 % for the best baseline (agentic RAG), at **2.5× lower median latency** and **1.7× higher
-> throughput**. Zero cross-tenant or role-based leaks across 180 probes, and 0 successful poisoning attacks.
+> throughput**. Zero cross-tenant or role-based leaks across 120 leakage probes, and 0 successful poisoning attacks.
 
 <p align="center"><img src="paper/figures/performance_results.png" width="520" alt="Accuracy by question type and accuracy versus latency for CloudRAG and four baselines"></p>
 

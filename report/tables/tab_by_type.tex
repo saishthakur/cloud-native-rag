@@ -1,0 +1,19 @@
+\begin{table}[!t]
+\caption{Answer Accuracy (\%) by Question Type}
+\label{tab:bytype}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\setbox0=\hbox{\begin{tabular}{lccccc}
+\toprule
+Method & Single-hop & Relational & Multi-hop & Multi-part & Aggregation \\
+\midrule
+Vanilla RAG & 100.0 & 0.0 & 0.0 & 100.0 & 6.6 \\
+Advanced RAG & 100.0 & 3.3 & 0.0 & 100.0 & 4.4 \\
+GraphRAG & 93.3 & 98.3 & 8.3 & 90.0 & 4.9 \\
+Agentic RAG & 100.0 & 100.0 & 100.0 & 100.0 & 31.1 \\
+CloudRAG (proposed) & 100.0 & 100.0 & 100.0 & 100.0 & 69.4 \\
+\bottomrule
+\end{tabular}}%
+\leavevmode\ifdim\wd0>\columnwidth\relax\resizebox{\columnwidth}{!}{\box0}\else\box0\fi\par
+\end{table}

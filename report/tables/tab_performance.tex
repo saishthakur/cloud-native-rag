@@ -1,0 +1,19 @@
+\begin{table}[!t]
+\caption{Performance Comparison (mean$\pm$std over 5 seeds)}
+\label{tab:performance}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\setbox0=\hbox{\begin{tabular}{lcccc}
+\toprule
+Method & Accuracy (\%) & Latency p50 (ms) & Throughput (QPS) & F1 \\
+\midrule
+Vanilla RAG & 54.1$\pm$1.1 & 2.3$\pm$0.4 & 317.6$\pm$85.2 & 0.337$\pm$0.005 \\
+Advanced RAG & 54.5$\pm$1.5 & 5.0$\pm$0.6 & 160.5$\pm$39.7 & 0.347$\pm$0.012 \\
+GraphRAG & 68.8$\pm$3.0 & 2.9$\pm$0.5 & 324.2$\pm$99.1 & 0.401$\pm$0.009 \\
+Agentic RAG & 92.7$\pm$1.6 & 18.5$\pm$3.9 & 52.3$\pm$5.1 & 0.478$\pm$0.007 \\
+CloudRAG (proposed) & \textbf{96.7$\pm$1.1} & 7.5$\pm$1.7 & 90.8$\pm$12.5 & 0.493$\pm$0.012 \\
+\bottomrule
+\end{tabular}}%
+\leavevmode\ifdim\wd0>\columnwidth\relax\resizebox{\columnwidth}{!}{\box0}\else\box0\fi\par
+\end{table}

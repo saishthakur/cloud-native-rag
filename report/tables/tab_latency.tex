@@ -1,0 +1,19 @@
+\begin{table*}[!t]
+\caption{Latency Distribution and Compute Cost per Query}
+\label{tab:latency}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\setbox0=\hbox{\begin{tabular}{lcccccc}
+\toprule
+Method & p50 & p95 & p99 (ms) & CPU (ms) & Energy (J) & Cost (\$) \\
+\midrule
+Vanilla RAG & 2.3 & 4.0 & 5.3 & 2.9 & 0.007 & 0.0026 \\
+Advanced RAG & 5.0 & 7.1 & 8.2 & 5.6 & 0.014 & 0.0027 \\
+GraphRAG & 2.9 & 4.4 & 6.2 & 3.2 & 0.008 & 0.0027 \\
+Agentic RAG & 18.5 & 32.7 & 38.0 & 19.9 & 0.050 & 0.0028 \\
+CloudRAG (proposed) & 7.5 & 28.3 & 39.0 & 11.9 & 0.030 & 0.0031 \\
+\bottomrule
+\end{tabular}}%
+\leavevmode\ifdim\wd0>\textwidth\relax\resizebox{\textwidth}{!}{\box0}\else\box0\fi\par
+\end{table*}

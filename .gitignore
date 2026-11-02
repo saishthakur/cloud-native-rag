@@ -12,3 +12,6 @@ data/
 
 # secrets
 .env
+
+# build outputs
+*.zip

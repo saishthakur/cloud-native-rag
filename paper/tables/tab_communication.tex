@@ -4,7 +4,7 @@
 \centering
 \footnotesize
 \setlength{\tabcolsep}{3pt}
-\begin{tabular}{lccc}
+\setbox0=\hbox{\begin{tabular}{lccc}
 \toprule
 Method & Internal requests & Payload (KB) & p50 over HTTP (ms) \\
 \midrule
@@ -14,5 +14,6 @@ GraphRAG & 4.0 & 30.5 & 24.8 \\
 Agentic RAG & 19.6 & 350.4 & 189.5 \\
 CloudRAG (proposed) & 12.4 & 201.8 & 68.1 \\
 \bottomrule
-\end{tabular}
+\end{tabular}}%
+\leavevmode\ifdim\wd0>\columnwidth\relax\resizebox{\columnwidth}{!}{\box0}\else\box0\fi\par
 \end{table}

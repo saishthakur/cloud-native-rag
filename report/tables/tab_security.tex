@@ -1,0 +1,25 @@
+\begin{table}[!t]
+\caption{Security Evaluation}
+\label{tab:security}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\setbox0=\hbox{\begin{tabular}{llr}
+\toprule
+Test & Volume & Result \\
+\midrule
+Cross-tenant leakage & 60 probes & 0.0\% \\
+RBAC leakage (unauthorised) & 60 probes & 0.0\% \\
+RBAC recall (authorised) & 60 probes & 100.0\% \\
+PII residue in index & 480 values & 0.0\% \\
+Injection queries blocked & 25 queries & 100.0\% \\
+Benign queries blocked (FP) & 25 queries & 0.0\% \\
+\midrule
+Instruction injection doc. & 45 quarantined & 0.0\% success \\
+Keyword stuffing doc. & 45 flagged & 0.0\% success \\
+Plain misinformation doc. & 45 accepted & 0.0\% success \\
+Audit chain integrity & 11095 records & valid \\
+\bottomrule
+\end{tabular}}%
+\leavevmode\ifdim\wd0>\columnwidth\relax\resizebox{\columnwidth}{!}{\box0}\else\box0\fi\par
+\end{table}

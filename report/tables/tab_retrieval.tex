@@ -1,0 +1,19 @@
+\begin{table*}[!t]
+\caption{Retrieval and Generation Quality (mean over seeds)}
+\label{tab:retrieval}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\setbox0=\hbox{\begin{tabular}{lcccccc}
+\toprule
+Method & Hit@k & MRR & Ctx-P & Ctx-R & Faith. & Rel. \\
+\midrule
+Vanilla RAG & 0.950 & 0.909 & 0.885 & 0.711 & 1.000 & 0.598 \\
+Advanced RAG & 0.905 & 0.894 & 0.848 & 0.725 & 1.000 & 0.599 \\
+GraphRAG & 0.884 & 0.575 & 0.548 & 0.799 & 0.985 & 0.575 \\
+Agentic RAG & 0.970 & 0.913 & 0.903 & 0.927 & 1.000 & 0.598 \\
+CloudRAG (proposed) & 0.932 & 0.888 & 0.847 & 0.973 & 1.000 & 0.597 \\
+\bottomrule
+\end{tabular}}%
+\leavevmode\ifdim\wd0>\textwidth\relax\resizebox{\textwidth}{!}{\box0}\else\box0\fi\par
+\end{table*}

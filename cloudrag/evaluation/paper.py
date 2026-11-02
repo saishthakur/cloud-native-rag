@@ -146,12 +146,19 @@ def _pm(st: dict, scale: float = 1.0, digits: int = 1) -> str:
     return f"{st['mean'] * scale:.{digits}f}$\\pm${st['std'] * scale:.{digits}f}"
 
 
-def _table(label: str, caption: str, cols: str, header: str, rows: list[str], small: bool = True) -> str:
-    size = "\\footnotesize\n\\setlength{\\tabcolsep}{3pt}\n" if small else ""
+def _table(label: str, caption: str, cols: str, header: str, rows: list[str], small: bool = True,
+           wide: bool = False) -> str:
+    """booktabs table; shrinks to the column (or page, for ``wide``) only when it would overflow."""
+    env = "table*" if wide else "table"
+    width = "\\textwidth" if wide else "\\columnwidth"
+    size = "\\footnotesize\n" + ("\\setlength{\\tabcolsep}{3pt}\n" if small else "")
     body = "\n".join(rows)
-    return (f"\\begin{{table}}[!t]\n\\caption{{{caption}}}\n\\label{{{label}}}\n\\centering\n{size}"
-            f"\\begin{{tabular}}{{{cols}}}\n\\toprule\n{header} \\\\\n\\midrule\n{body}\n\\bottomrule\n"
-            f"\\end{{tabular}}\n\\end{{table}}\n")
+    tabular = (f"\\begin{{tabular}}{{{cols}}}\n\\toprule\n{header} \\\\\n\\midrule\n{body}\n\\bottomrule\n"
+               f"\\end{{tabular}}")
+    return (f"\\begin{{{env}}}[!t]\n\\caption{{{caption}}}\n\\label{{{label}}}\n\\centering\n{size}"
+            f"\\setbox0=\\hbox{{{tabular}}}%\n"
+            f"\\leavevmode\\ifdim\\wd0>{width}\\relax\\resizebox{{{width}}}{{!}}{{\\box0}}\\else\\box0\\fi\\par\n"
+            f"\\end{{{env}}}\n")
 
 
 def latex_tables(res: dict) -> dict[str, str]:
@@ -171,7 +178,7 @@ def latex_tables(res: dict) -> dict[str, str]:
         "Method & Hit@k & MRR & Ctx-P & Ctx-R & Faith. & Rel.",
         [f"{LABELS[s]} & {v['hit']['mean']:.3f} & {v['mrr']['mean']:.3f} & {v['ctx_precision']['mean']:.3f} & "
          f"{v['ctx_recall']['mean']:.3f} & {v['faithfulness']['mean']:.3f} & {v['answer_relevance']['mean']:.3f} \\\\"
-         for s, v in S.items()])
+         for s, v in S.items()], wide=True)
 
     t["tab_by_type"] = _table(
         "tab:bytype", "Answer Accuracy (\\%) by Question Type", "l" + "c" * len(QTYPES),
@@ -184,7 +191,7 @@ def latex_tables(res: dict) -> dict[str, str]:
         "Method & p50 & p95 & p99 (ms) & CPU (ms) & Energy (J) & Cost (\\$)",
         [f"{LABELS[s]} & {v['p50_ms']['mean']:.1f} & {v['p95_ms']['mean']:.1f} & {v['p99_ms']['mean']:.1f} & "
          f"{v['cpu_ms_per_query']['mean']:.1f} & {v['energy_j_per_query']['mean']:.3f} & "
-         f"{v['cost_per_query_usd']['mean']:.4f} \\\\" for s, v in S.items()])
+         f"{v['cost_per_query_usd']['mean']:.4f} \\\\" for s, v in S.items()], wide=True)
 
     comm = res["overhead"]["communication"]
     t["tab_communication"] = _table(
@@ -260,9 +267,9 @@ def latex_tables(res: dict) -> dict[str, str]:
          "Quarantine / flag threshold & 0.70 / 0.35 \\\\",
          "Query block threshold & 0.80 \\\\",
          f"Concurrent clients (throughput) & {res['per_seed'][0]['throughput']['cloudrag']['concurrency']} \\\\",
-         f"Repetitions & {n} seeds ({', '.join(map(str, res['seeds']))}) \\\\",
-         f"Cost model & {cfg['cost_model']} list price \\\\",
-         f"Energy model & {cfg['watts_per_busy_core']} W per busy core \\\\"], small=False)
+         f"Repetitions & {n} independent seeds \\\\",
+         "Cost model & Claude Opus 5.5 list price \\\\",
+         f"Energy model & {cfg['watts_per_busy_core']} W per busy core \\\\"])
 
     tb = res["testbed"]
     t["testbed"] = ("\\begin{itemize}\n"

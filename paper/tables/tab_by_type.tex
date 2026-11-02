@@ -4,7 +4,7 @@
 \centering
 \footnotesize
 \setlength{\tabcolsep}{3pt}
-\begin{tabular}{lccccc}
+\setbox0=\hbox{\begin{tabular}{lccccc}
 \toprule
 Method & Single-hop & Relational & Multi-hop & Multi-part & Aggregation \\
 \midrule
@@ -14,5 +14,6 @@ GraphRAG & 93.3 & 98.3 & 8.3 & 90.0 & 4.9 \\
 Agentic RAG & 100.0 & 100.0 & 100.0 & 100.0 & 31.1 \\
 CloudRAG (proposed) & 100.0 & 100.0 & 100.0 & 100.0 & 69.4 \\
 \bottomrule
-\end{tabular}
+\end{tabular}}%
+\leavevmode\ifdim\wd0>\columnwidth\relax\resizebox{\columnwidth}{!}{\box0}\else\box0\fi\par
 \end{table}

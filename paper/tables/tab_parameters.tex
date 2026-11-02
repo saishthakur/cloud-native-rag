@@ -2,7 +2,9 @@
 \caption{Experimental Parameters}
 \label{tab:parameters}
 \centering
-\begin{tabular}{lc}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\setbox0=\hbox{\begin{tabular}{lc}
 \toprule
 Parameter & Value \\
 \midrule
@@ -18,9 +20,10 @@ Agentic max. bridging steps & 3 \\
 Quarantine / flag threshold & 0.70 / 0.35 \\
 Query block threshold & 0.80 \\
 Concurrent clients (throughput) & 8 \\
-Repetitions & 5 seeds (7, 11, 23, 42, 2026) \\
-Cost model & claude-opus-5-5 list price \\
+Repetitions & 5 independent seeds \\
+Cost model & Claude Opus 5.5 list price \\
 Energy model & 2.5 W per busy core \\
 \bottomrule
-\end{tabular}
+\end{tabular}}%
+\leavevmode\ifdim\wd0>\columnwidth\relax\resizebox{\columnwidth}{!}{\box0}\else\box0\fi\par
 \end{table}
