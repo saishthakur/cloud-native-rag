@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudrag
+  labels:
+    istio-injection: enabled          # sidecars for mTLS, retries and circuit breaking (see ../mesh)
+    pod-security.kubernetes.io/enforce: restricted

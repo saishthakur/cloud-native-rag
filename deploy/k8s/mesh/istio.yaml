@@ -1,0 +1,94 @@
+# Service-mesh governance (requires Istio): mutual TLS everywhere, identity-based authorization
+# mirroring the NetworkPolicies, and per-service circuit breaking / outlier ejection.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: retrieval-backends
+spec:
+  selector:
+    matchExpressions:
+      - { key: app.kubernetes.io/name, operator: In, values: [embedding, reranker] }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/cloudrag/sa/cloudrag-retrieval
+              - cluster.local/ns/cloudrag/sa/cloudrag-indexing
+    - to: [{ operation: { paths: ["/healthz", "/readyz", "/metrics"] } }]
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: indexing-callers
+spec:
+  selector: { matchLabels: { app.kubernetes.io/name: indexing } }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/cloudrag/sa/cloudrag-retrieval
+              - cluster.local/ns/cloudrag/sa/cloudrag-gateway
+    - to: [{ operation: { paths: ["/healthz", "/readyz", "/metrics"] } }]
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: gateway-only
+spec:
+  selector:
+    matchExpressions:
+      - { key: app.kubernetes.io/name, operator: In, values: [ingestion, retrieval, generation] }
+  action: ALLOW
+  rules:
+    - from: [{ source: { principals: ["cluster.local/ns/cloudrag/sa/cloudrag-gateway"] } }]
+    - to: [{ operation: { paths: ["/healthz", "/readyz", "/metrics"] } }]
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: cloudrag-internal
+spec:
+  host: "*.cloudrag.svc.cluster.local"
+  trafficPolicy:
+    tls: { mode: ISTIO_MUTUAL }
+    connectionPool:
+      tcp: { maxConnections: 200, connectTimeout: 2s }
+      http: { http1MaxPendingRequests: 500, http2MaxRequests: 1000, maxRequestsPerConnection: 100 }
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: generation
+spec:
+  host: generation.cloudrag.svc.cluster.local
+  trafficPolicy:
+    tls: { mode: ISTIO_MUTUAL }
+    connectionPool:
+      http: { http1MaxPendingRequests: 200, http2MaxRequests: 400 }   # bound concurrent LLM calls
+    outlierDetection: { consecutive5xxErrors: 3, interval: 10s, baseEjectionTime: 60s }
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: retrieval
+spec:
+  hosts: [retrieval]
+  http:
+    - route: [{ destination: { host: retrieval } }]
+      timeout: 10s
+      retries: { attempts: 2, perTryTimeout: 5s, retryOn: "5xx,reset,connect-failure" }

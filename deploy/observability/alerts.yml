@@ -1,0 +1,35 @@
+groups:
+  - name: cloudrag
+    rules:
+      - alert: CloudRAGHighQueryLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(cloudrag_request_seconds_bucket{service="gateway",route="/v1/query"}[5m]))) > 2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 query latency above 2s"
+      - alert: CloudRAGLowFaithfulness
+        expr: histogram_quantile(0.5, sum by (le) (rate(cloudrag_online_quality_bucket{metric="faithfulness"}[30m]))) < 0.7
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "median online faithfulness estimate below 0.7 (possible drift or retrieval regression)"
+      - alert: CloudRAGIntegrityViolation
+        expr: increase(cloudrag_security_events_total{type=~"integrity_violation|tenant_isolation_violation|acl_violation"}[5m]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "index integrity, ACL or tenant isolation violation detected"
+      - alert: CloudRAGPoisoningSpike
+        expr: increase(cloudrag_security_events_total{type="chunk_quarantined"}[15m]) > 20
+        labels: { severity: warning }
+        annotations:
+          summary: "unusual number of quarantined chunks at ingestion"
+      - alert: CloudRAGDeadLetters
+        expr: increase(cloudrag_bus_events_total{outcome="dead_letter"}[10m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "indexing events moved to the dead-letter stream"
+      - alert: CloudRAGLLMSpend
+        expr: sum(increase(cloudrag_llm_cost_usd_total[1h])) > 50
+        labels: { severity: warning }
+        annotations:
+          summary: "LLM spend above $50 in the last hour"

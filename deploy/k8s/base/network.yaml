@@ -1,0 +1,96 @@
+# Zero-trust networking: deny everything, then allow only the call graph
+#   ingress-controller -> gateway -> {ingestion, retrieval, generation, indexing}
+#   retrieval -> {embedding, indexing, reranker};  indexing -> embedding
+#   {ingestion, indexing} -> redis;  monitoring -> every /metrics port
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-from-ingress
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: gateway } }
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
+      ports: [{ port: 8000 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: from-gateway
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/name, operator: In, values: [ingestion, retrieval, generation, indexing] }
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app.kubernetes.io/name: gateway } } }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: from-retrieval
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/name, operator: In, values: [embedding, indexing, reranker] }
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app.kubernetes.io/name: retrieval } } }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: embedding-from-indexing
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: embedding } }
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app.kubernetes.io/name: indexing } } }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-from-pipeline
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/name: redis } }
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/name, operator: In, values: [ingestion, indexing] }
+      ports: [{ port: 6379 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metrics-from-monitoring
+spec:
+  podSelector: { matchLabels: { app.kubernetes.io/part-of: cloudrag } }
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cloudrag
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 25m
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [rag.example.internal]
+      secretName: cloudrag-tls
+  rules:
+    - host: rag.example.internal
+      http:
+        paths:
+          - path: /v1
+            pathType: Prefix
+            backend: { service: { name: gateway, port: { number: 8000 } } }

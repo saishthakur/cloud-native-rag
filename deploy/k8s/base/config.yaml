@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudrag-config
+data:
+  CLOUDRAG_BUS: redis
+  CLOUDRAG_REDIS_URL: redis://redis:6379/0
+  CLOUDRAG_DATA_DIR: /data
+  CLOUDRAG_DEV_AUTH: "false"           # tokens come from the organisation's IdP in production
+  CLOUDRAG_PII_MODE: redact
+  CLOUDRAG_VECTOR_INDEX: hnsw
+  CLOUDRAG_EMBEDDER: hashing
+  CLOUDRAG_EMBED_DIM: "512"
+  CLOUDRAG_RERANKER: lexical
+  CLOUDRAG_LLM: anthropic
+  CLOUDRAG_ANTHROPIC_MODEL: claude-opus-5-5
+  CLOUDRAG_ANTHROPIC_EFFORT: medium
+  CLOUDRAG_SHARD_COUNT: "2"            # must equal the indexing StatefulSet replica count
+  CLOUDRAG_EMBEDDING_URL: http://embedding:8002
+  CLOUDRAG_INDEXING_URLS: http://indexing-0.indexing:8003,http://indexing-1.indexing:8003
+  CLOUDRAG_RERANKER_URL: http://reranker:8005
+  CLOUDRAG_RETRIEVAL_URL: http://retrieval:8004
+  CLOUDRAG_GENERATION_URL: http://generation:8006
+  CLOUDRAG_INGESTION_URL: http://ingestion:8001
+  CLOUDRAG_RATE_LIMIT_RPS: "50"
+  CLOUDRAG_RATE_LIMIT_BURST: "100"
+---
+# Placeholder values only. Create the real secret out of band, e.g.
+#   kubectl -n cloudrag create secret generic cloudrag-secrets \
+#     --from-literal=CLOUDRAG_SECRET_KEY=... --from-literal=CLOUDRAG_PROVENANCE_KEY=... \
+#     --from-literal=ANTHROPIC_API_KEY=...
+# or sync it from a secret manager (External Secrets Operator, Vault, Sealed Secrets).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudrag-secrets
+type: Opaque
+stringData:
+  CLOUDRAG_SECRET_KEY: replace-me
+  CLOUDRAG_PROVENANCE_KEY: replace-me
+  CLOUDRAG_ADMIN_BOOTSTRAP_KEY: replace-me
+  ANTHROPIC_API_KEY: ""

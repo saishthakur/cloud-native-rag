@@ -1,0 +1,38 @@
+# Prometheus Operator resources: scrape every CloudRAG pod and load the alert rules.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cloudrag
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/part-of: cloudrag }
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cloudrag
+spec:
+  groups:
+    - name: cloudrag
+      rules:
+        - alert: CloudRAGHighQueryLatency
+          expr: histogram_quantile(0.95, sum by (le) (rate(cloudrag_request_seconds_bucket{service="gateway",route="/v1/query"}[5m]))) > 2
+          for: 10m
+          labels: { severity: warning }
+        - alert: CloudRAGLowFaithfulness
+          expr: histogram_quantile(0.5, sum by (le) (rate(cloudrag_online_quality_bucket{metric="faithfulness"}[30m]))) < 0.7
+          for: 30m
+          labels: { severity: warning }
+        - alert: CloudRAGIntegrityViolation
+          expr: increase(cloudrag_security_events_total{type=~"integrity_violation|tenant_isolation_violation|acl_violation"}[5m]) > 0
+          labels: { severity: critical }
+        - alert: CloudRAGPoisoningSpike
+          expr: increase(cloudrag_security_events_total{type="chunk_quarantined"}[15m]) > 20
+          labels: { severity: warning }
+        - alert: CloudRAGDeadLetters
+          expr: increase(cloudrag_bus_events_total{outcome="dead_letter"}[10m]) > 0
+          labels: { severity: warning }

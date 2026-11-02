@@ -1,0 +1,98 @@
+# Distributed CloudRAG on one machine: Redis Streams + 7 services, indexing split into 2 shards.
+#   docker compose up --build
+#   docker compose --profile observability up --build     # adds Prometheus on :9090
+# Secrets below are development placeholders; override them (e.g. in a .env file) for anything shared.
+
+x-common-env: &common-env
+  CLOUDRAG_SECRET_KEY: ${CLOUDRAG_SECRET_KEY:-dev-insecure-secret-change-me}
+  CLOUDRAG_PROVENANCE_KEY: ${CLOUDRAG_PROVENANCE_KEY:-dev-insecure-provenance-key}
+  CLOUDRAG_ADMIN_BOOTSTRAP_KEY: ${CLOUDRAG_ADMIN_BOOTSTRAP_KEY:-dev-admin-key}
+  CLOUDRAG_BUS: redis
+  CLOUDRAG_REDIS_URL: redis://redis:6379/0
+  CLOUDRAG_SHARD_COUNT: "2"
+  CLOUDRAG_EMBEDDING_URL: http://embedding:8002
+  CLOUDRAG_INDEXING_URLS: http://indexing-0:8003,http://indexing-1:8003
+  CLOUDRAG_RERANKER_URL: http://reranker:8005
+  CLOUDRAG_RETRIEVAL_URL: http://retrieval:8004
+  CLOUDRAG_GENERATION_URL: http://generation:8006
+  CLOUDRAG_INGESTION_URL: http://ingestion:8001
+  CLOUDRAG_LLM: ${CLOUDRAG_LLM:-extractive}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+x-service: &service
+  image: cloudrag:0.1.0
+  build: .
+  restart: unless-stopped
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  gateway:
+    <<: *service
+    command: ["gateway"]
+    environment: { <<: *common-env, PORT: "8000" }
+    ports: ["8000:8000"]
+    volumes: ["gateway-data:/data"]
+
+  ingestion:
+    <<: *service
+    command: ["ingestion"]
+    environment: { <<: *common-env, PORT: "8001" }
+    volumes: ["ingestion-data:/data"]
+
+  embedding:
+    <<: *service
+    command: ["embedding"]
+    environment: { <<: *common-env, PORT: "8002" }
+
+  indexing-0:
+    <<: *service
+    command: ["indexing"]
+    environment: { <<: *common-env, PORT: "8003", CLOUDRAG_SHARD_ORDINAL: "0" }
+    volumes: ["index-0:/data"]
+
+  indexing-1:
+    <<: *service
+    command: ["indexing"]
+    environment: { <<: *common-env, PORT: "8003", CLOUDRAG_SHARD_ORDINAL: "1" }
+    volumes: ["index-1:/data"]
+
+  retrieval:
+    <<: *service
+    command: ["retrieval"]
+    environment: { <<: *common-env, PORT: "8004" }
+
+  reranker:
+    <<: *service
+    command: ["reranker"]
+    environment: { <<: *common-env, PORT: "8005" }
+
+  generation:
+    <<: *service
+    command: ["generation"]
+    environment: { <<: *common-env, PORT: "8006" }
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    profiles: ["observability"]
+    volumes:
+      - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports: ["9090:9090"]
+
+volumes:
+  redis-data:
+  gateway-data:
+  ingestion-data:
+  index-0:
+  index-1:

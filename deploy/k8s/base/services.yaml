@@ -1,0 +1,536 @@
+# Stateless CloudRAG services: Service + Deployment + HorizontalPodAutoscaler + PodDisruptionBudget each.
+# Generated from one template so every service gets the same probes, security context and scaling policy.
+---
+# gateway: public API: auth, rate limits, input filtering, orchestration, audit
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  labels: { app.kubernetes.io/name: gateway, app.kubernetes.io/part-of: cloudrag }
+spec:
+  selector: { app.kubernetes.io/name: gateway }
+  ports: [{ name: http, port: 8000, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  labels: { app.kubernetes.io/name: gateway, app.kubernetes.io/part-of: cloudrag }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector:
+    matchLabels: { app.kubernetes.io/name: gateway }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: gateway, app.kubernetes.io/part-of: cloudrag, app.kubernetes.io/version: "0.1.0" }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8000", prometheus.io/path: /metrics }
+    spec:
+      serviceAccountName: cloudrag-gateway
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/name: gateway } }
+      containers:
+        - name: gateway
+          image: cloudrag:0.1.0
+          args: ["gateway"]
+          ports: [{ name: http, containerPort: 8000 }]
+          env:
+            - { name: PORT, value: "8000" }
+            - { name: CLOUDRAG_SERVICE_NAME, value: gateway }
+          envFrom:
+            - configMapRef: { name: cloudrag-config }
+            - secretRef: { name: cloudrag-secrets }
+          readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 5, failureThreshold: 3 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, failureThreshold: 6 }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts: [{ name: data, mountPath: /data }, { name: tmp, mountPath: /tmp }]
+      volumes:
+        - { name: data, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloudrag-gateway
+  labels: { app.kubernetes.io/part-of: cloudrag }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: gateway }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+  behavior:
+    scaleUp: { stabilizationWindowSeconds: 0, policies: [{ type: Percent, value: 100, periodSeconds: 30 }] }
+    scaleDown: { stabilizationWindowSeconds: 300, policies: [{ type: Percent, value: 25, periodSeconds: 60 }] }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: gateway }
+---
+# ingestion: validation, PII redaction, poisoning scan, chunking, provenance; publishes to Redis Streams
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingestion
+  labels: { app.kubernetes.io/name: ingestion, app.kubernetes.io/part-of: cloudrag }
+spec:
+  selector: { app.kubernetes.io/name: ingestion }
+  ports: [{ name: http, port: 8001, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion
+  labels: { app.kubernetes.io/name: ingestion, app.kubernetes.io/part-of: cloudrag }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector:
+    matchLabels: { app.kubernetes.io/name: ingestion }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: ingestion, app.kubernetes.io/part-of: cloudrag, app.kubernetes.io/version: "0.1.0" }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8001", prometheus.io/path: /metrics }
+    spec:
+      serviceAccountName: cloudrag-ingestion
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/name: ingestion } }
+      containers:
+        - name: ingestion
+          image: cloudrag:0.1.0
+          args: ["ingestion"]
+          ports: [{ name: http, containerPort: 8001 }]
+          env:
+            - { name: PORT, value: "8001" }
+            - { name: CLOUDRAG_SERVICE_NAME, value: ingestion }
+          envFrom:
+            - configMapRef: { name: cloudrag-config }
+            - secretRef: { name: cloudrag-secrets }
+          readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 5, failureThreshold: 3 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, failureThreshold: 6 }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts: [{ name: data, mountPath: /data }, { name: tmp, mountPath: /tmp }]
+      volumes:
+        - { name: data, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloudrag-ingestion
+  labels: { app.kubernetes.io/part-of: cloudrag }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ingestion
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: ingestion }
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+  behavior:
+    scaleUp: { stabilizationWindowSeconds: 0, policies: [{ type: Percent, value: 100, periodSeconds: 30 }] }
+    scaleDown: { stabilizationWindowSeconds: 300, policies: [{ type: Percent, value: 25, periodSeconds: 60 }] }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ingestion
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: ingestion }
+---
+# embedding: stateless embedding model server
+apiVersion: v1
+kind: Service
+metadata:
+  name: embedding
+  labels: { app.kubernetes.io/name: embedding, app.kubernetes.io/part-of: cloudrag }
+spec:
+  selector: { app.kubernetes.io/name: embedding }
+  ports: [{ name: http, port: 8002, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: embedding
+  labels: { app.kubernetes.io/name: embedding, app.kubernetes.io/part-of: cloudrag }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector:
+    matchLabels: { app.kubernetes.io/name: embedding }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: embedding, app.kubernetes.io/part-of: cloudrag, app.kubernetes.io/version: "0.1.0" }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8002", prometheus.io/path: /metrics }
+    spec:
+      serviceAccountName: cloudrag-embedding
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/name: embedding } }
+      containers:
+        - name: embedding
+          image: cloudrag:0.1.0
+          args: ["embedding"]
+          ports: [{ name: http, containerPort: 8002 }]
+          env:
+            - { name: PORT, value: "8002" }
+            - { name: CLOUDRAG_SERVICE_NAME, value: embedding }
+          envFrom:
+            - configMapRef: { name: cloudrag-config }
+            - secretRef: { name: cloudrag-secrets }
+          readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 5, failureThreshold: 3 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, failureThreshold: 6 }
+          resources:
+            requests: { cpu: 500m, memory: 512Mi }
+            limits: { memory: 2Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts: [{ name: data, mountPath: /data }, { name: tmp, mountPath: /tmp }]
+      volumes:
+        - { name: data, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloudrag-embedding
+  labels: { app.kubernetes.io/part-of: cloudrag }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: embedding
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: embedding }
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } }
+  behavior:
+    scaleUp: { stabilizationWindowSeconds: 0, policies: [{ type: Percent, value: 100, periodSeconds: 30 }] }
+    scaleDown: { stabilizationWindowSeconds: 300, policies: [{ type: Percent, value: 25, periodSeconds: 60 }] }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: embedding
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: embedding }
+---
+# retrieval: router + naive/advanced/graph/agentic strategies, RRF, integrity checks
+apiVersion: v1
+kind: Service
+metadata:
+  name: retrieval
+  labels: { app.kubernetes.io/name: retrieval, app.kubernetes.io/part-of: cloudrag }
+spec:
+  selector: { app.kubernetes.io/name: retrieval }
+  ports: [{ name: http, port: 8004, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: retrieval
+  labels: { app.kubernetes.io/name: retrieval, app.kubernetes.io/part-of: cloudrag }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector:
+    matchLabels: { app.kubernetes.io/name: retrieval }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: retrieval, app.kubernetes.io/part-of: cloudrag, app.kubernetes.io/version: "0.1.0" }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8004", prometheus.io/path: /metrics }
+    spec:
+      serviceAccountName: cloudrag-retrieval
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/name: retrieval } }
+      containers:
+        - name: retrieval
+          image: cloudrag:0.1.0
+          args: ["retrieval"]
+          ports: [{ name: http, containerPort: 8004 }]
+          env:
+            - { name: PORT, value: "8004" }
+            - { name: CLOUDRAG_SERVICE_NAME, value: retrieval }
+          envFrom:
+            - configMapRef: { name: cloudrag-config }
+            - secretRef: { name: cloudrag-secrets }
+          readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 5, failureThreshold: 3 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, failureThreshold: 6 }
+          resources:
+            requests: { cpu: 500m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts: [{ name: data, mountPath: /data }, { name: tmp, mountPath: /tmp }]
+      volumes:
+        - { name: data, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloudrag-retrieval
+  labels: { app.kubernetes.io/part-of: cloudrag }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: retrieval
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: retrieval }
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }
+  behavior:
+    scaleUp: { stabilizationWindowSeconds: 0, policies: [{ type: Percent, value: 100, periodSeconds: 30 }] }
+    scaleDown: { stabilizationWindowSeconds: 300, policies: [{ type: Percent, value: 25, periodSeconds: 60 }] }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: retrieval
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: retrieval }
+---
+# reranker: second-stage reranking
+apiVersion: v1
+kind: Service
+metadata:
+  name: reranker
+  labels: { app.kubernetes.io/name: reranker, app.kubernetes.io/part-of: cloudrag }
+spec:
+  selector: { app.kubernetes.io/name: reranker }
+  ports: [{ name: http, port: 8005, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reranker
+  labels: { app.kubernetes.io/name: reranker, app.kubernetes.io/part-of: cloudrag }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector:
+    matchLabels: { app.kubernetes.io/name: reranker }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: reranker, app.kubernetes.io/part-of: cloudrag, app.kubernetes.io/version: "0.1.0" }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8005", prometheus.io/path: /metrics }
+    spec:
+      serviceAccountName: cloudrag-reranker
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/name: reranker } }
+      containers:
+        - name: reranker
+          image: cloudrag:0.1.0
+          args: ["reranker"]
+          ports: [{ name: http, containerPort: 8005 }]
+          env:
+            - { name: PORT, value: "8005" }
+            - { name: CLOUDRAG_SERVICE_NAME, value: reranker }
+          envFrom:
+            - configMapRef: { name: cloudrag-config }
+            - secretRef: { name: cloudrag-secrets }
+          readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 5, failureThreshold: 3 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, failureThreshold: 6 }
+          resources:
+            requests: { cpu: 500m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts: [{ name: data, mountPath: /data }, { name: tmp, mountPath: /tmp }]
+      volumes:
+        - { name: data, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloudrag-reranker
+  labels: { app.kubernetes.io/part-of: cloudrag }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: reranker
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: reranker }
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }
+  behavior:
+    scaleUp: { stabilizationWindowSeconds: 0, policies: [{ type: Percent, value: 100, periodSeconds: 30 }] }
+    scaleDown: { stabilizationWindowSeconds: 300, policies: [{ type: Percent, value: 25, periodSeconds: 60 }] }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: reranker
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: reranker }
+---
+# generation: grounded answer generation (Claude) with circuit breaker and fallback
+apiVersion: v1
+kind: Service
+metadata:
+  name: generation
+  labels: { app.kubernetes.io/name: generation, app.kubernetes.io/part-of: cloudrag }
+spec:
+  selector: { app.kubernetes.io/name: generation }
+  ports: [{ name: http, port: 8006, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: generation
+  labels: { app.kubernetes.io/name: generation, app.kubernetes.io/part-of: cloudrag }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector:
+    matchLabels: { app.kubernetes.io/name: generation }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: generation, app.kubernetes.io/part-of: cloudrag, app.kubernetes.io/version: "0.1.0" }
+      annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8006", prometheus.io/path: /metrics }
+    spec:
+      serviceAccountName: cloudrag-generation
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001, seccompProfile: { type: RuntimeDefault } }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/name: generation } }
+      containers:
+        - name: generation
+          image: cloudrag:0.1.0
+          args: ["generation"]
+          ports: [{ name: http, containerPort: 8006 }]
+          env:
+            - { name: PORT, value: "8006" }
+            - { name: CLOUDRAG_SERVICE_NAME, value: generation }
+          envFrom:
+            - configMapRef: { name: cloudrag-config }
+            - secretRef: { name: cloudrag-secrets }
+          readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 5, failureThreshold: 3 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, failureThreshold: 6 }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts: [{ name: data, mountPath: /data }, { name: tmp, mountPath: /tmp }]
+      volumes:
+        - { name: data, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloudrag-generation
+  labels: { app.kubernetes.io/part-of: cloudrag }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: generation
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: generation }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+  behavior:
+    scaleUp: { stabilizationWindowSeconds: 0, policies: [{ type: Percent, value: 100, periodSeconds: 30 }] }
+    scaleDown: { stabilizationWindowSeconds: 300, policies: [{ type: Percent, value: 25, periodSeconds: 60 }] }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: generation
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: generation }
