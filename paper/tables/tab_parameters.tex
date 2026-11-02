@@ -1,0 +1,26 @@
+\begin{table}[!t]
+\caption{Experimental Parameters}
+\label{tab:parameters}
+\centering
+\begin{tabular}{lc}
+\toprule
+Parameter & Value \\
+\midrule
+Retrieved chunks per query ($k$) & 5 \\
+Chunk size & 120 words, 1-sentence overlap \\
+Embedding & feature hashing, 512 dims \\
+HNSW ($M$, $ef_{c}$, $ef_{s}$) & 16, 80, 64 \\
+BM25 ($k_1$, $b$) & 1.2, 0.75 \\
+RRF constant & 60 \\
+Candidate pool & $\max(4k, 20)$ \\
+Graph traversal depth & 2 hops, decay 0.5 \\
+Agentic max. bridging steps & 3 \\
+Quarantine / flag threshold & 0.70 / 0.35 \\
+Query block threshold & 0.80 \\
+Concurrent clients (throughput) & 8 \\
+Repetitions & 5 seeds (7, 11, 23, 42, 2026) \\
+Cost model & claude-opus-5-5 list price \\
+Energy model & 2.5 W per busy core \\
+\bottomrule
+\end{tabular}
+\end{table}

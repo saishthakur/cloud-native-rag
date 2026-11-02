@@ -47,6 +47,17 @@ def context_recall(retrieved_docs: list[str], gold_docs: set[str]) -> float:
     return len(set(retrieved_docs) & gold_docs) / len(gold_docs) if gold_docs else 1.0
 
 
+def precision_at_k(retrieved_docs: list[str], gold_docs: set[str]) -> float:
+    """Share of retrieved documents that are gold evidence (unranked)."""
+    return len(set(retrieved_docs) & gold_docs) / len(retrieved_docs) if retrieved_docs else 0.0
+
+
+def retrieval_f1(retrieved_docs: list[str], gold_docs: set[str]) -> float:
+    """Harmonic mean of precision@k and recall over gold evidence documents."""
+    p, r = precision_at_k(retrieved_docs, gold_docs), context_recall(retrieved_docs, gold_docs)
+    return 2 * p * r / (p + r) if p + r else 0.0
+
+
 def token_f1(pred: str, gold: str) -> float:
     p, g = normalize_answer(pred).split(), normalize_answer(gold).split()
     if not p or not g:

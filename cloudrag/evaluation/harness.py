@@ -29,7 +29,11 @@ from ..core.models import DocumentIn, QueryRequest
 from ..runtime import LocalPlatform
 from ..security import BlockedInputError
 from .metrics import (answer_correct, answer_relevance, context_precision, context_recall, faithfulness, hit_rate,
-                      mrr, percentile)
+                      mrr, percentile, precision_at_k, retrieval_f1)
+
+# Energy is estimated, not metered: CPU-seconds x per-core power. Default: Intel Core i3-1215U,
+# 15 W processor base power over 6 cores = 2.5 W per busy core. Override for other hardware.
+WATTS_PER_BUSY_CORE = float(os.environ.get("CLOUDRAG_WATTS_PER_CORE", "2.5"))
 from .synthetic import BENIGN_QUERIES, INJECTION_QUERIES, build_corpus, poisoned_documents
 
 SYSTEMS = {
@@ -89,8 +93,45 @@ class Harness:
         total = time.perf_counter() - t0
         out = {"documents": n_docs, "chunks": n_chunks, "ingest_accept_s": accepted, "index_complete_s": total,
                "docs_per_s": n_docs / total, "chunks_per_s": n_chunks / total,
-               "namespaces": {t: self.platform.store.namespace(t).stats() for t in self.tenants}}
+               "namespaces": {t: self.platform.store.namespace(t).stats() for t in self.tenants},
+               **self._memory()}
         self.report["ingestion"] = out
+        return out
+
+    def _memory(self) -> dict:
+        """Index footprint (serialised namespace: vectors, HNSW links, postings, graph, chunk text)."""
+        import pickle
+
+        index_bytes = 0
+        for t in self.tenants:
+            ns = self.platform.store.namespace(t)
+            with ns.lock:
+                index_bytes += len(pickle.dumps(ns, protocol=pickle.HIGHEST_PROTOCOL))
+        chunks = self.platform.store.total_chunks()
+        out = {"index_bytes": index_bytes, "index_bytes_per_chunk": index_bytes / max(1, chunks)}
+        try:
+            import psutil
+
+            out["process_rss_mb"] = psutil.Process().memory_info().rss / 2**20
+        except ImportError:
+            pass
+        return out
+
+    def throughput(self, concurrency: int = 8, n_queries: int = 150) -> dict:
+        """Concurrent throughput of each system over the same question mix."""
+        work = [(tc.tenant, q.question) for tc in self.corpora.values() for q in tc.questions]
+        ctxs = {t: self.reader(t) for t in self.tenants}
+        out = {}
+        for system, strategy in SYSTEMS.items():
+            jobs = [work[i % len(work)] for i in range(n_queries)]
+            with ThreadPoolExecutor(max_workers=concurrency) as ex:  # warm-up: pools, caches, CPU clocks
+                list(ex.map(lambda j: self._ask(ctxs[j[0]], j[1], strategy), jobs[:2 * concurrency]))
+            t0 = time.perf_counter()
+            with ThreadPoolExecutor(max_workers=concurrency) as ex:
+                lat = list(ex.map(lambda j: self._ask(ctxs[j[0]], j[1], strategy)[1], jobs))
+            out[system] = {"concurrency": concurrency, "qps": n_queries / (time.perf_counter() - t0),
+                           **_lat_summary(lat)}
+        self.report["throughput"] = out
         return out
 
     def _ask(self, ctx, question: str, strategy: str):
@@ -104,6 +145,7 @@ class Harness:
         routes: dict = defaultdict(Counter)
         for system, strategy in SYSTEMS.items():
             rows = []
+            cpu0, wall0 = time.process_time(), time.perf_counter()
             for tc in self.corpora.values():
                 ctx = self.reader(tc.tenant)
                 for q in tc.questions:
@@ -115,6 +157,9 @@ class Harness:
                         "hit": hit_rate(docs, q.gold_docs, self.top_k), "mrr": mrr(docs, q.gold_docs),
                         "ctx_precision": context_precision(docs, q.gold_docs),
                         "ctx_recall": context_recall(docs, q.gold_docs),
+                        "precision_at_k": precision_at_k(docs, q.gold_docs),
+                        "f1": retrieval_f1(docs, q.gold_docs),
+                        "context_chunks": float(len(resp.contexts)),
                         "correct": answer_correct(answer, q.answers),
                         "faithfulness": faithfulness(answer, [c.chunk.text for c in resp.contexts]) if not resp.abstained else 0.0,
                         "answer_relevance": answer_relevance(q.question, answer, embedder) if not resp.abstained else 0.0,
@@ -122,7 +167,13 @@ class Harness:
                     })
                     if system == "cloudrag":
                         routes[q.qtype][resp.strategy] += 1
-            results[system] = {"overall": self._agg(rows), "by_type": {
+            cpu_s, wall_s = time.process_time() - cpu0, time.perf_counter() - wall0
+            overall = self._agg(rows)
+            # sequential (single-client) throughput and compute cost of the whole pipeline per query
+            overall["sequential_qps"] = len(rows) / wall_s
+            overall["cpu_ms_per_query"] = 1000 * cpu_s / len(rows)
+            overall["energy_j_per_query"] = cpu_s / len(rows) * WATTS_PER_BUSY_CORE
+            results[system] = {"overall": overall, "by_type": {
                 t: self._agg([r for r in rows if r["qtype"] == t]) for t in sorted({r["qtype"] for r in rows})}}
         self.report["quality"] = results
         self.report["routing"] = {t: dict(c) for t, c in routes.items()}
@@ -130,7 +181,8 @@ class Harness:
 
     @staticmethod
     def _agg(rows: list[dict]) -> dict:
-        keys = ["hit", "mrr", "ctx_precision", "ctx_recall", "correct", "faithfulness", "answer_relevance", "abstained"]
+        keys = ["hit", "mrr", "ctx_precision", "ctx_recall", "precision_at_k", "f1", "context_chunks", "correct",
+                "faithfulness", "answer_relevance", "abstained"]
         out = {k: _mean(r[k] for r in rows) for k in keys}
         out.update(_lat_summary([r["latency_ms"] for r in rows]))
         out["cost_per_query_usd"] = _mean(r["cost"] for r in rows)
@@ -266,11 +318,13 @@ class Harness:
 
     # -- orchestration ---------------------------------------------------------------------------------
     def run(self, concurrency=(1, 4, 16), load_queries: int = 200, suites=None) -> dict:
-        suites = suites or ["quality", "load", "incremental", "security"]
+        suites = suites or ["quality", "throughput", "load", "incremental", "security"]
         t0 = time.time()
         self.ingest()
         if "quality" in suites:
             self.quality()
+        if "throughput" in suites:
+            self.throughput()
         if "load" in suites:
             self.load(concurrency, load_queries)
         if "incremental" in suites:
@@ -296,13 +350,18 @@ def to_markdown(r: dict) -> str:
     q = r.get("quality")
     if q:
         lines += ["## Quality and latency (all questions)", "",
-                  "| system | hit@k | MRR | ctx precision | ctx recall | correct | faithful | relevance | p50 ms | p95 ms | p99 ms | est. $/query |",
-                  "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+                  "| system | hit@k | MRR | ctx precision | ctx recall | F1 | correct | faithful | relevance | p50 ms | p95 ms | p99 ms | CPU ms/q | est. $/query |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for sys_name, v in q.items():
             o = v["overall"]
             lines.append(f"| {sys_name} | {f(o['hit'])} | {f(o['mrr'])} | {f(o['ctx_precision'])} | {f(o['ctx_recall'])} | "
-                         f"{f(o['correct'])} | {f(o['faithfulness'])} | {f(o['answer_relevance'])} | {o['p50_ms']:.1f} | "
-                         f"{o['p95_ms']:.1f} | {o['p99_ms']:.1f} | {o['cost_per_query_usd']:.5f} |")
+                         f"{f(o['f1'])} | {f(o['correct'])} | {f(o['faithfulness'])} | {f(o['answer_relevance'])} | "
+                         f"{o['p50_ms']:.1f} | {o['p95_ms']:.1f} | {o['p99_ms']:.1f} | {o['cpu_ms_per_query']:.1f} | "
+                         f"{o['cost_per_query_usd']:.5f} |")
+        if r.get("throughput"):
+            lines += ["", "### Throughput per system", "", "| system | concurrency | QPS | p50 ms | p95 ms |", "|---|---|---|---|---|"]
+            for sys_name, v in r["throughput"].items():
+                lines.append(f"| {sys_name} | {v['concurrency']} | {v['qps']:.1f} | {v['p50_ms']:.1f} | {v['p95_ms']:.1f} |")
         types = sorted({t for v in q.values() for t in v["by_type"]})
         lines += ["", "### Answer correctness by question type", "",
                   "| system | " + " | ".join(types) + " |", "|---|" + "---|" * len(types)]

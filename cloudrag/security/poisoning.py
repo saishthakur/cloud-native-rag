@@ -20,6 +20,8 @@ import zlib
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from ..core.text import content_terms, split_sentences, tokenize
 
 _RULES: list[tuple[re.Pattern, float, str]] = [
@@ -82,15 +84,14 @@ def stuffing_signal(text: str) -> dict | None:
     return None
 
 
-def simhash(text: str, bits: int = 64) -> int:
+def simhash(text: str) -> int:
+    """64-bit SimHash over word 3-shingles (bit-vote vectorised with NumPy)."""
     toks = tokenize(text)
-    shingles = [" ".join(toks[i : i + 3]) for i in range(max(1, len(toks) - 2))]
-    v = [0] * bits
-    for sh in shingles:
-        h = zlib.crc32(sh.encode()) | (zlib.crc32(sh.encode()[::-1]) << 32)
-        for b in range(bits):
-            v[b] += 1 if (h >> b) & 1 else -1
-    return sum(1 << b for b in range(bits) if v[b] > 0)
+    shingles = [" ".join(toks[i : i + 3]).encode() for i in range(max(1, len(toks) - 2))]
+    hashes = np.array([zlib.crc32(sh) | (zlib.crc32(sh[::-1]) << 32) for sh in shingles], dtype=np.uint64)
+    bits = (hashes[:, None] >> np.arange(64, dtype=np.uint64)) & np.uint64(1)  # [n_shingles, 64]
+    votes = 2 * bits.sum(axis=0, dtype=np.int64) - len(shingles)
+    return int(sum(1 << b for b in np.flatnonzero(votes > 0).tolist()))
 
 
 class PoisoningDetector:

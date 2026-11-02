@@ -63,6 +63,15 @@ def _eval(args) -> None:
     print(f"wrote {jpath} and {mpath}")
 
 
+def _paper(args) -> None:
+    from .evaluation.paper import run_experiments, write_outputs
+
+    res = run_experiments([int(s) for s in args.seeds.split(",")], args.tenants.split(","), args.filler, args.top_k,
+                          settings=Settings.from_env())
+    for p in write_outputs(res, args.out):
+        print("wrote", p)
+
+
 def _loadtest(args) -> None:
     import httpx
 
@@ -123,6 +132,14 @@ def main(argv=None) -> None:
     ep.add_argument("--vector-index", default="")
     ep.add_argument("--out", default="reports")
     ep.set_defaults(fn=_eval)
+
+    pp = sub.add_parser("paper", help="multi-seed experiments -> JSON, Markdown and LaTeX tables")
+    pp.add_argument("--seeds", default="7,11,23,42,2026")
+    pp.add_argument("--tenants", default="initech,umbrella,hooli")
+    pp.add_argument("--filler", type=int, default=200, help="distractor documents per tenant")
+    pp.add_argument("--top-k", type=int, default=5)
+    pp.add_argument("--out", default="paper")
+    pp.set_defaults(fn=_paper)
 
     lp = sub.add_parser("loadtest", help="drive a running gateway")
     lp.add_argument("--url", default="http://localhost:8000")
