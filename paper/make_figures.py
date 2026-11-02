@@ -155,16 +155,123 @@ def architecture_figure(path: str) -> None:
     plt.close(fig)
 
 
+# -- wider charts for the repository README -------------------------------------------------------------
+# Router strategies share the colour of the baseline system that implements the same pathway.
+STRATEGY_COLOR = {"naive": COLOR["vanilla-rag"], "advanced": COLOR["advanced-rag"], "graph": COLOR["graphrag"],
+                  "agentic": COLOR["agentic-rag"]}
+README_W = 7.0
+
+
+def _hbars(ax, labels, values, errors=None, color=COLOR["cloudrag"], fmt="{:.1f}"):
+    """Horizontal bars, first label on top, value printed at the end of each bar."""
+    ys = list(range(len(labels)))[::-1]
+    ax.barh(ys, values, height=0.62, color=color, edgecolor="white", linewidth=0.5,
+            xerr=errors, error_kw={"ecolor": INK2, "elinewidth": 0.6, "capsize": 1.5}, zorder=2)
+    for y, v, e in zip(ys, values, errors or [0] * len(values)):
+        ax.text(v + e + max(values) * 0.02, y, fmt.format(v), va="center", fontsize=6.8, color=INK)
+    ax.set_yticks(ys, labels)
+    ax.set_xlim(0, max(v + e for v, e in zip(values, errors or [0] * len(values))) * 1.22)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(axis="x", color=GRID, linewidth=0.5)
+    ax.set_axisbelow(True)
+    ax.tick_params(length=0)
+
+
+def throughput_latency_figure(res: dict, path: str) -> None:
+    S = res["systems"]
+    order = SYSTEMS
+    labels = [LABEL[s] for s in order]
+    colors = [COLOR[s] for s in order]
+    fig, axes = plt.subplots(1, 3, figsize=(README_W, 2.2), sharey=True)
+    for ax, key, title, fmt in ((axes[0], "throughput_qps", "Throughput, 8 clients (QPS)", "{:.0f}"),
+                                (axes[1], "p50_ms", "Median latency p50 (ms)", "{:.1f}"),
+                                (axes[2], "cpu_ms_per_query", "CPU time per query (ms)", "{:.1f}")):
+        _hbars(ax, labels, [S[s][key]["mean"] for s in order], [S[s][key]["std"] for s in order], colors, fmt)
+        ax.set_title(title, loc="left", color=INK)
+    fig.tight_layout(w_pad=1.5)
+    fig.savefig(path, facecolor="white")
+    plt.close(fig)
+
+
+def communication_figure(res: dict, path: str) -> None:
+    comm = res["overhead"]["communication"]["query"]
+    labels = [LABEL[s] for s in SYSTEMS]
+    colors = [COLOR[s] for s in SYSTEMS]
+    fig, axes = plt.subplots(1, 2, figsize=(README_W, 2.0), sharey=True)
+    _hbars(axes[0], labels, [comm[s]["internal_requests_per_query"] for s in SYSTEMS], None, colors, "{:.1f}")
+    axes[0].set_title("Service-to-service requests per query", loc="left", color=INK)
+    _hbars(axes[1], labels, [comm[s]["internal_kb_per_query"] for s in SYSTEMS], None, colors, "{:.0f} KB")
+    axes[1].set_title("Internal payload per query (KB)", loc="left", color=INK)
+    fig.tight_layout(w_pad=1.5)
+    fig.savefig(path, facecolor="white")
+    plt.close(fig)
+
+
+def routing_figure(res: dict, path: str) -> None:
+    routing = res["routing"]
+    strategies = ["naive", "advanced", "graph", "agentic"]
+    fig, ax = plt.subplots(figsize=(README_W, 2.0))
+    ys = list(range(len(QTYPES)))[::-1]
+    for y, q in zip(ys, QTYPES):
+        counts = routing.get(q, {})
+        total = sum(counts.values()) or 1
+        left = 0.0
+        for st in strategies:
+            share = counts.get(st, 0) / total * 100
+            if share:
+                ax.barh(y, share, left=left, height=0.62, color=STRATEGY_COLOR[st], edgecolor="white", linewidth=1.0)
+                if share >= 8:
+                    ax.text(left + share / 2, y, f"{st} {share:.0f}%", ha="center", va="center", fontsize=6.6,
+                            color="#0b0b0b" if st == "advanced" else "white")
+                left += share
+    ax.set_yticks(ys, [QLABEL[q] for q in QTYPES])
+    ax.set_xlim(0, 100)
+    ax.set_xlabel("Share of questions routed to each pathway (%), all seeds")
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.tick_params(length=0)
+    ax.legend(handles=[Patch(facecolor=STRATEGY_COLOR[s], label=s) for s in strategies], ncol=4, frameon=False,
+              loc="lower center", bbox_to_anchor=(0.5, 1.0), fontsize=6.8)
+    fig.tight_layout()
+    fig.savefig(path, facecolor="white")
+    plt.close(fig)
+
+
+def security_overhead_figure(res: dict, path: str) -> None:
+    so = res["overhead"]["security"]
+    rows = [("PII redaction (per doc)", "pii_redaction_us_per_doc"),
+            ("Near-duplicate / hidden text (per doc)", "poisoning_doc_signals_us_per_doc"),
+            ("Poisoning scan (per chunk)", "poisoning_scan_us_per_chunk"),
+            ("Provenance signing (per chunk)", "provenance_sign_us_per_chunk"),
+            ("Provenance verification (per chunk)", "provenance_verify_us_per_chunk"),
+            ("Query injection filter (per query)", "query_guard_us_per_query")]
+    fig, ax = plt.subplots(figsize=(README_W, 2.1))
+    _hbars(ax, [r[0] for r in rows], [so[k]["mean"] for _, k in rows], [so[k]["std"] for _, k in rows],
+           COLOR["cloudrag"], "{:.0f} µs")
+    ax.set_title(f"Cost of each security control (µs). Total: {so['ingest_security_share']['mean'] * 100:.0f}% of "
+                 f"ingestion time, {so['query_security_share_of_p50']['mean'] * 100:.1f}% of query latency",
+                 loc="left", color=INK)
+    fig.tight_layout()
+    fig.savefig(path, facecolor="white")
+    plt.close(fig)
+
+
 def main() -> None:
     src = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "results", "experiments.json")
     out = os.path.join(HERE, "figures")
     os.makedirs(out, exist_ok=True)
     with open(src, encoding="utf-8") as f:
         res = json.load(f)
-    performance_figure(res, os.path.join(out, "performance_results.png"))
-    architecture_figure(os.path.join(out, "system_architecture.png"))
-    print("wrote", os.path.join(out, "performance_results.png"))
-    print("wrote", os.path.join(out, "system_architecture.png"))
+    figures = {
+        "performance_results.png": lambda p: performance_figure(res, p),
+        "system_architecture.png": architecture_figure,
+        "throughput_latency.png": lambda p: throughput_latency_figure(res, p),
+        "communication_overhead.png": lambda p: communication_figure(res, p),
+        "router_decisions.png": lambda p: routing_figure(res, p),
+        "security_overhead.png": lambda p: security_overhead_figure(res, p),
+    }
+    for name, draw in figures.items():
+        draw(os.path.join(out, name))
+        print("wrote", os.path.join(out, name))
 
 
 if __name__ == "__main__":
